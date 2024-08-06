@@ -45,19 +45,20 @@ def measurement_model(y: np.ndarray, censoring: float = 2500., threshold: float 
     return y
 
 
-def prop_noise(y: np.ndarray, error_params: np.ndarray) -> np.ndarray:
+def prop_noise(y: np.ndarray, error_constant: float, error_prop: float) -> np.ndarray:
     """
     Proportional error model for given trajectories.
 
     Parameters:
     y (np.ndarray): The trajectory to which noise should be added.
-    error_params (np.ndarray): Standard deviations of the Gaussian noise: (a+by)*noise where noise is standard normal.
+    error_constant (float): The constant error term.
+    error_prop (float): The proportional error term.
 
     Returns:
     np.ndarray: The noisy trajectories.
     """
     noise = np.random.normal(loc=0, scale=1, size=y.shape)
-    return y + (error_params[0] + error_params[1] * y) * noise
+    return y + (error_constant + error_prop * y) * noise
 
 
 def batch_simulator(param_batch: np.ndarray,
@@ -110,7 +111,7 @@ def batch_simulator(param_batch: np.ndarray,
     for pars_i, log_params in enumerate(param_batch):
         params = np.exp(log_params)
         infected_before_first_dose = 1  # patient is infected before the first dose
-        if params[0] < 0.01:
+        if params[0] < 0.1:
             infected_before_first_dose = 0
 
         # sample the measurement and dosing time points
@@ -127,7 +128,7 @@ def batch_simulator(param_batch: np.ndarray,
             params[0] = 0.0
 
         # convert to julia types
-        jl_parameter = jlconvert(jl.Vector[jl.Float64], params[:-2])
+        jl_parameter = jlconvert(jl.Vector[jl.Float64], params[:-1])
         jl_dosetimes = jlconvert(jl.Vector[jl.Float64], t_doses)
         jl_t_measurement = jlconvert(jl.Vector[jl.Float64], t_measurements)
 
@@ -141,7 +142,7 @@ def batch_simulator(param_batch: np.ndarray,
 
         # apply noise
         if with_noise:
-            y_sim = prop_noise(y_sim, error_params=params[-2:])
+            y_sim = prop_noise(y_sim, error_constant=0., error_prop=params[-1])
 
         # applying censoring
         y_sim = measurement_model(y_sim)
@@ -184,7 +185,7 @@ def batch_gaussian_prior_de_pillis(mean: np.ndarray,
                                                 cov=cov,
                                                 size=batch_size)
     # set the first parameter to 0 if the patient was not infected before the first dose
-    prior_batch[np.random.uniform(0, 1, size=batch_size) > rand_infected_before_first_dose, 0] = -5
+    prior_batch[np.random.uniform(0, 1, size=batch_size) > rand_infected_before_first_dose, 0] = np.log(0.01)
     return prior_batch
 
 
@@ -195,7 +196,7 @@ def simulate_single_patient(param_batch: np.ndarray,
                             convert_to_bf_batch: bool = False
                             ) -> np.ndarray:
     """uses the batch simulator to simulate a single patient"""
-    y, t_measurements, doses_time_points, infected_before_first_dose = convert_bf_to_observables(patient_data)
+    y, t_measurements, doses_time_points, _ = convert_bf_to_observables(patient_data)
     if full_trajectory:
         t_measurements = np.linspace(0, t_measurements[-1], 100)
 
@@ -219,7 +220,7 @@ def convert_to_bf_format(y: np.ndarray,
     """
     converts all data to the format used by the bayesflow summary model
         (y_transformed, timepoints_transformed, 0) concatenated with
-        (infected_before_first_dose, dosing_time__transformed / scaling_time, 1)
+        (infected_before_first_dose, dosing_time_transformed / scaling_time, 1)
     and then sort by time
     """
     y_transformed = (y - measurements_mean) / measurements_std
@@ -266,11 +267,11 @@ class dePillisModel(NlmeBaseAmortizer):
                  ):
         # define names of parameters
         param_names = ['Ab0', 'r1', 'r2', 'r3', 'r4', 'k1', 'k2',
-                       'error_constant', 'error_prop']
+                       'error_prop']
 
         # define prior values (for log-parameters)
-        prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1, 0.1])
-        prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 1., 1.]))
+        prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1])
+        prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 1.]))
 
         # define prior bounds for uniform prior
         # self.prior_bounds = np.array([[-10, 5], [-5, 10], [-5, 10], [-20, 0], [-10, 0], [-10, 0], [-10, 0]])
@@ -295,7 +296,7 @@ class dePillisModel(NlmeBaseAmortizer):
         Returns: prior, configured_input - prior distribution and function to configure input
 
         """
-        print('Using de Pillis prior')
+        print('Using normal prior adapted for dePillis')
         print('prior mean:', self.prior_mean)
         print('prior covariance diagonal:', self.prior_cov.diagonal())
         self.prior = Prior(batch_prior_fun=partial(batch_gaussian_prior_de_pillis,
@@ -311,7 +312,7 @@ class dePillisModel(NlmeBaseAmortizer):
 
         # load best
         if load_best:
-            model_idx = 1
+            model_idx = np.nan
 
         # 0: 9.7840
         # 1: 9.7285
@@ -418,7 +419,7 @@ class dePillisModel(NlmeBaseAmortizer):
                                         doses_time_points=d_times)
             if np.isnan(data).any():
                 print(f'Patient {patient} has nan values and is removed.')
-                # remove patients with nan values # todo: nan values
+                # remove patients with nan values
                 continue
             patients_data.append(data)
             patients_covariates.append(covariates)
@@ -475,7 +476,10 @@ class dePillisModel(NlmeBaseAmortizer):
             ax.plot(t_measurement_full, y_median, 'b', label='median')
 
         # plot observed data
-        ax.scatter(t_measurements, y, color='b', label='measurements')
+        if infected_before_first_dose == 0:
+            ax.scatter(t_measurements, y, color='b', label='measurements')
+        else:
+            ax.scatter(t_measurements, y, color='b', label='measurements (infected before first dose)')
 
         # plot dosing events
         ax.vlines(doses_time_points, 0, 2500,

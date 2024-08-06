@@ -108,11 +108,17 @@ def compute_log_integrand(n_sim: int,
                 start, end = p_i * n_samples, (p_i + 1) * n_samples
                 temp_psi[start:end] = 0.5 * (dif[start:end].dot(psi_inverse[p_i]) * dif[start:end]).sum(axis=1)
     else:
-        # compute huber loss  # todo: does not work with covariates yet
-        cholesky_psi = np.linalg.cholesky(psi_inverse)
+        # compute huber loss
+        if psi_inverse.ndim == 2:
+            cholesky_psi = np.linalg.cholesky(psi_inverse)
+        else:
+            raise NotImplementedError('huber loss not yet implemented for transformed covariance')
         temp_psi = np.zeros(n_sim * n_samples)
-        for p_i, params in enumerate(log_param_samples_reshaped):  # todo: not yet vectorized
-            dif_huber = params - beta
+        for p_i, params in enumerate(log_param_samples_reshaped):
+            if beta.ndim == 1:
+                dif_huber = params - beta
+            else:
+                dif_huber = params - beta[p_i]
             dif_psi_norm = np.linalg.norm(dif_huber.T.dot(cholesky_psi))
             if np.abs(dif_psi_norm) <= huber_loss_delta:
                 temp_psi[p_i] = 0.5 * dif_psi_norm ** 2

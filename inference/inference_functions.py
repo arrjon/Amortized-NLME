@@ -75,7 +75,7 @@ def run_population_optimization(
         # chose delta in a data dependent way
         samples = individual_model.draw_posterior_samples(data, n_samples_opt).reshape(-1, individual_model.n_params)
         huber_loss_delta = np.round((np.median(np.std(samples, axis=0)) * 1.5), 4)
-        print(f"Use huber loss with delta = {huber_loss}.")
+        print(f"Use huber loss with delta = {huber_loss_delta}.")
     else:
         huber_loss_delta = None
     # create objective function
