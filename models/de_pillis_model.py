@@ -128,7 +128,7 @@ def batch_simulator(param_batch: np.ndarray,
             params[0] = 0.0
 
         # convert to julia types
-        jl_parameter = jlconvert(jl.Vector[jl.Float64], params[:-1])
+        jl_parameter = jlconvert(jl.Vector[jl.Float64], params[:-2])
         jl_dosetimes = jlconvert(jl.Vector[jl.Float64], t_doses)
         jl_t_measurement = jlconvert(jl.Vector[jl.Float64], t_measurements)
 
@@ -142,7 +142,7 @@ def batch_simulator(param_batch: np.ndarray,
 
         # apply noise
         if with_noise:
-            y_sim = prop_noise(y_sim, error_constant=0., error_prop=params[-1])
+            y_sim = prop_noise(y_sim, error_constant=params[2], error_prop=params[-1])
 
         # applying censoring
         y_sim = measurement_model(y_sim)
@@ -267,11 +267,11 @@ class dePillisModel(NlmeBaseAmortizer):
                  ):
         # define names of parameters
         param_names = ['Ab0', 'r1', 'r2', 'r3', 'r4', 'k1', 'k2',
-                       'error_prop']
+                       'error_constant', 'error_prop']
 
         # define prior values (for log-parameters)
-        prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1])
-        prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 1.]))
+        prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1, 0.1])
+        prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 1., 1]))
 
         # define prior bounds for uniform prior
         # self.prior_bounds = np.array([[-10, 5], [-5, 10], [-5, 10], [-20, 0], [-10, 0], [-10, 0], [-10, 0]])
@@ -312,7 +312,7 @@ class dePillisModel(NlmeBaseAmortizer):
 
         # load best
         if load_best:
-            model_idx = np.nan
+            model_idx = 1
 
         # 0: 9.7840
         # 1: 9.7285

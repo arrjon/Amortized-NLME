@@ -150,7 +150,6 @@ class ObjectiveFunctionNLME:
                  covariates: Optional[np.ndarray] = None,
                  covariate_mapping: Optional[callable] = None,
                  n_covariates_params: int = 0,
-                 correlation_penalty: Optional[float] = None,
                  huber_loss_delta: Optional[float] = None,
                  prior_type: str = 'normal',
                  prior_bounds: Optional[np.ndarray] = None,
@@ -165,7 +164,6 @@ class ObjectiveFunctionNLME:
         :param covariates: numpy array of covariates
         :param covariate_mapping: function that maps parameters, covariates to distributional parameters
         :param n_covariates_params: number of parameters for covariates function
-        :param correlation_penalty: l1 penalty for correlations
         :param huber_loss_delta: delta for huber loss (e.g. 1.5 times the median of the standard deviations,
                         penalizes outliers more strongly than a normal distribution)
         :param prior_type: either 'normal' or 'uniform'
@@ -179,7 +177,6 @@ class ObjectiveFunctionNLME:
         self.covariance_format = covariance_format
         if covariance_format != 'diag' and covariance_format != 'cholesky':
             raise ValueError(f'covariance_format must be either "diag" or "cholesky", but is {covariance_format}')
-        self.correlation_penalty = correlation_penalty
         self.huber_loss_delta = huber_loss_delta
 
         self.prior_type = prior_type
@@ -224,7 +221,7 @@ class ObjectiveFunctionNLME:
             self.n_covariates_params = 0
             self.covariate_mapping = None
 
-        # get indices of parameter types (mean, var, correlation etc.) to construct the right parameter vector
+        # get indices of parameter types (mean, std, correlation etc.) to construct the right parameter vector
         self.beta_index = range(0, self.param_dim)
         if covariance_format == 'diag':
             last_entry = self.param_dim * 2
@@ -245,6 +242,7 @@ class ObjectiveFunctionNLME:
             self.compute_log_integrand = compute_log_integrand
 
     def _set_constants(self) -> None:
+        """precompute constant terms of loss"""
         # compute constant terms of loss
         if self.prior_type == 'normal' and self.huber_loss_delta is None:
             _, logabsdet = np.linalg.slogdet(self.prior_cov_inverse)
@@ -348,6 +346,7 @@ class ObjectiveFunctionNLME:
 
     # define objective function to minimize parameters
     def __call__(self, vector_params: np.ndarray) -> float:
+        """compute negative log-likelihood for a given parameter vector"""
         # build mean, covariance matrix and vector of parameters for covariates / joint model
         (beta, psi_inverse, psi_inverse_vector, covariates_params) = self.get_params(vector_params=vector_params)
 
@@ -379,7 +378,6 @@ class ObjectiveFunctionNLME:
             beta_transformed, psi_inverse_transformed = None, None
             # compute parts of the loss
             _, logabsdet = np.linalg.slogdet(psi_inverse)
-            # logabsdet = np.sum(vector_params[self.psi_inv_index][:self.param_dim])
             det_term = self.n_sim * 0.5 * logabsdet
 
         # compute the loss
@@ -392,11 +390,6 @@ class ObjectiveFunctionNLME:
 
         # compute negative log-likelihood
         nll = -(self.constant_terms + det_term + expectation_log_sum)
-
-        # add l1 penalty for correlations
-        if self.correlation_penalty is not None:
-            # the first param_dim entries of psi_inverse_vector are the variances
-            nll += self.correlation_penalty * np.sum(np.abs(psi_inverse_vector[self.param_dim:]))
         return nll
 
     def estimate_mc_integration_variance(self, vector_params: np.ndarray) -> (np.ndarray, np.ndarray):
@@ -404,7 +397,6 @@ class ObjectiveFunctionNLME:
         # build mean, covariance matrix and vector of parameters for covariates
         (beta, psi_inverse, psi_inverse_vector, covariates_params) = self.get_params(vector_params=vector_params)
 
-        # include covariates
         # include covariates
         if self.n_covariates_params > 0:
             # beta transformed is now a mean depending on the covariates, thus changing for every data point
@@ -450,6 +442,14 @@ class ObjectiveFunctionNLME:
 
     def get_params(self, vector_params: np.ndarray) -> (np.ndarray, np.ndarray, np.ndarray,
                                                         Optional[np.ndarray], Optional[np.ndarray]):
+        """
+        get parameters from vector representation
+        Args:
+            vector_params: vector representation of parameters
+
+        Returns: beta, psi_inverse, (psi_inverse_vector), (covariates_params)
+
+        """
         # get parameter vectors
         # vector_params = (beta, psi_inverse_vector, covariates_params)
         # covariates_params and joint_params might be missing
@@ -468,25 +468,41 @@ class ObjectiveFunctionNLME:
         return beta, psi_inverse, psi_inverse_vector, covariates_params
 
     def get_inverse_covariance_vector(self, psi: np.ndarray) -> np.ndarray:
+        """
+        get vector representation of inverse covariance matrix
+        Args:
+            psi: covariance matrix
+
+        Returns: vector representation
+
+        """
         if self.covariance_format == 'diag':
-            # psi = log of diagonal entries since entries must be positive
-            psi_inv_vector = -np.log(psi.diagonal())
+            psi_inv_vector = -0.5*np.log(psi.diagonal())
         else:
             # 'cholesky'
             # triangular matrix to vector
             psi_inv = np.linalg.inv(psi)
             lu, d, perm = ldl_decomposition(psi_inv)
             psi_inv_lower = lu[perm, :][np.tril_indices(self.param_dim, k=-1)]
-            psi_inv_vector = np.concatenate((np.log(d.diagonal()), psi_inv_lower))
+            psi_inv_vector = np.concatenate((0.5*np.log(d.diagonal()), psi_inv_lower))
         return psi_inv_vector
 
 
 def get_inverse_covariance(psi_inverse_vector: np.ndarray,
                            covariance_format: str,
                            param_dim: int) -> np.ndarray:
+    """
+    get inverse covariance matrix from vector representation
+    Args:
+        psi_inverse_vector: vector representation of inverse covariance matrix
+        covariance_format: 'diag' or 'cholesky'
+        param_dim: number of parameters
+
+    Returns: inverse covariance matrix
+
+    """
     if covariance_format == 'diag':
-        # psi = log of diagonal entries since entries must be positive
-        psi_inverse = np.diag(np.exp(psi_inverse_vector))
+        psi_inverse = np.diag(np.exp(2*psi_inverse_vector))
     else:
         # matrix is 'cholesky'
         # vector to triangular matrix
@@ -494,7 +510,7 @@ def get_inverse_covariance(psi_inverse_vector: np.ndarray,
         psi_inverse_lower[np.diag_indices(param_dim)] = 1
         psi_inverse_lower[np.tril_indices(param_dim, k=-1)] = psi_inverse_vector[param_dim:]
 
-        psi_inverse_diag = np.diag(np.exp(psi_inverse_vector[:param_dim]))
+        psi_inverse_diag = np.diag(np.exp(2*psi_inverse_vector[:param_dim]))
         psi_inverse = psi_inverse_lower.dot(psi_inverse_diag).dot(psi_inverse_lower.T)
     return psi_inverse
 
@@ -502,6 +518,16 @@ def get_inverse_covariance(psi_inverse_vector: np.ndarray,
 def get_covariance(psi_inverse_vector: np.ndarray,
                    covariance_format: str,
                    param_dim: int) -> np.ndarray:
+    """
+    get covariance matrix from vector representation
+    Args:
+        psi_inverse_vector: vector representation of inverse covariance matrix
+        covariance_format: 'diag' or 'cholesky'
+        param_dim: number of parameters
+
+    Returns: covariance matrix
+
+    """
     inverse_covariance = get_inverse_covariance(psi_inverse_vector,
                                                 covariance_format=covariance_format,
                                                 param_dim=param_dim)
@@ -510,6 +536,7 @@ def get_covariance(psi_inverse_vector: np.ndarray,
 
 
 def a(n: int, delta: float) -> float:
+    """recursive function for huber loss"""
     if n == 0:
         return np.sqrt(np.pi / 2) * erf(delta / np.sqrt(2))
     elif n == 1:
@@ -519,6 +546,7 @@ def a(n: int, delta: float) -> float:
 
 
 def b(n: int, delta: float) -> float:
+    """recursive function for huber loss"""
     if n == 0:
         return np.exp(-delta**2) / delta
     else:
@@ -526,6 +554,7 @@ def b(n: int, delta: float) -> float:
 
 
 def sphere_volume(dim: int, r: float = 1.0) -> float:
+    """volume of a sphere"""
     return (np.pi**(dim / 2)) / gamma(dim / 2 + 1) * (r**dim)
 
 

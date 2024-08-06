@@ -19,7 +19,7 @@ def create_boundaries_from_prior(
         covariates_bounds: Optional[np.ndarray] = None,
         boundary_width_from_prior: float = 3,
         covariance_format: str = 'diag',
-        minimal_variance_fixed_params: float = 0.001) -> np.ndarray:
+        minimal_std_fixed_params: float = 0.01) -> np.ndarray:
     """Create boundaries for optimization problem from prior mean and standard deviation."""
     if prior_type == 'uniform':
         assert prior_bounds is not None, 'prior_bounds must be given for uniform prior'
@@ -30,20 +30,20 @@ def create_boundaries_from_prior(
         lb_means = prior_mean - boundary_width_from_prior * prior_std
         ub_means = prior_mean + boundary_width_from_prior * prior_std
 
-    # add boundaries for variance parameters (log-inverse-transformed)
+    # add boundaries for standard deviation parameters (log-inverse-transformed)
     max_std = np.max(boundary_width_from_prior * prior_std)
     mean_std = np.mean(prior_std)
-    lb_var = -np.log(mean_std) - max_std
-    ub_var = -np.log(mean_std) + max_std
+    lb_std = -np.log(mean_std) - max_std
+    ub_std = -np.log(mean_std) + max_std
 
-    # make sure that variance is not too small for fixed parameters
+    # make sure that standard deviation is not too small for fixed parameters
     # otherwise the optimization problem becomes ill-conditioned
-    minimal_var_inv = -np.log(minimal_variance_fixed_params)
-    ub_var = min(ub_var, minimal_var_inv)
+    minimal_std_inv = -np.log(minimal_std_fixed_params)
+    ub_std = min(ub_std, minimal_std_inv)
 
-    # concatenate mean and variance boundaries
-    lower_bound = np.concatenate((lb_means, np.ones_like(lb_means) * lb_var))
-    upper_bound = np.concatenate((ub_means, np.ones_like(ub_means) * ub_var))
+    # concatenate mean and standard deviation boundaries
+    lower_bound = np.concatenate((lb_means, np.ones_like(lb_means) * lb_std))
+    upper_bound = np.concatenate((ub_means, np.ones_like(ub_means) * ub_std))
 
     if covariance_format == 'cholesky':
         # add lower triangular part of covariance matrix
@@ -83,9 +83,9 @@ def create_param_names_opt(dim: int,
 def create_mixed_effect_model_param_names(param_names: list,
                                           cov_type: str,
                                           ) -> list:
-    """create parameter names for mixed effect model (mean, variance, correlation)"""
+    """create parameter names for mixed effect model (mean, standard deviation, correlation)"""
     pop_param_names = ['pop-' + name for name in param_names]
-    var_param_names = ['var-' + name for name in param_names]
+    var_param_names = ['std-' + name for name in param_names]
     mixed_effect_params_names = pop_param_names + var_param_names
 
     if cov_type == 'cholesky' and len(mixed_effect_params_names) == len(param_names) * 2:
@@ -156,10 +156,10 @@ def create_fixed_params(fix_names: list, fixed_values: list,
     fixed_values_out = []
     for n_i, name in enumerate(fix_names):
         fixed_indices.append(params_list.index(name))
-        if name.startswith('var-'):
-            # variance parameters are log-inverse-transformed
+        if name.startswith('std-'):
+            # standard deviation parameters are log-inverse-transformed
             if fixed_values[n_i] == 0:
-                # if variance is zero, set to lower bound (or upper bound of log-inverse-transformed)
+                # if standard deviation is zero, set to lower bound (or upper bound of log-inverse-transformed)
                 temp_val = -np.log(0.001)
             else:
                 temp_val = np.log(1 / fixed_values[n_i])
