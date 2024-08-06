@@ -90,6 +90,9 @@ class NlmeBaseAmortizer(ABC):
         self.network_name = self.load_amortizer_configuration(model_idx=network_idx, load_best=load_best)
         self._build_amortizer()
         self._build_prior()
+        self.configured_input = partial(configure_input,
+                                        prior_means=self.prior_mean,
+                                        prior_stds=self.prior_std)
 
         self.simulator = None  # to be defined in child class
         """
@@ -109,7 +112,7 @@ class NlmeBaseAmortizer(ABC):
             model_name = None
         return model_name
 
-    def build_trainer(self, path_store_network: str, max_to_keep: int = 3) -> Trainer:
+    def build_trainer(self, path_store_network: str, max_to_keep: int = 7) -> Trainer:
         if self.simulator is None:
             raise ValueError('Simulator not defined yet.')
         generative_model = GenerativeModel(prior=self.prior,
@@ -136,16 +139,17 @@ class NlmeBaseAmortizer(ABC):
         """
         # summary network
         # 2^k hidden units s.t. 2^k > #datapoints = 8
-        power_k_hidden_units = int(np.ceil(np.log2(self.max_n_obs)))
+        lstm_units = 2 ** int(np.ceil(np.log2(self.max_n_obs)))
+        lstm_units = max(lstm_units, 32)
 
         if self.summary_network_type == 'split-sequence':
             network_kwargs = {'summary_dim': self.summary_dim,
                               'num_conv_layers': self.num_conv_layers,
-                              'lstm_units': 2 ** power_k_hidden_units,
+                              'lstm_units': lstm_units,
                               'bidirectional': self.bidirectional_LSTM}
             print(f'using a split network with 2 splits, '
                   f'in each {self.num_conv_layers} layers of MultiConv1D, '
-                  f'a {"bidirectional" if self.bidirectional_LSTM else ""} LSTM with {2 ** power_k_hidden_units} '
+                  f'a {"bidirectional" if self.bidirectional_LSTM else ""} LSTM with {lstm_units} '
                   f'units and a dense layer with output dimension {self.summary_dim} as summary network')
 
             summary_net = SplitNetwork(
@@ -167,11 +171,11 @@ class NlmeBaseAmortizer(ABC):
             summary_net = SequenceNetwork(
                 summary_dim=self.summary_dim,
                 num_conv_layers=self.num_conv_layers,
-                lstm_units=2 ** power_k_hidden_units,
+                lstm_units=lstm_units,
                 bidirectional=self.bidirectional_LSTM)
             print(
                 f'using {self.num_conv_layers} layers of MultiConv1D, '
-                f'a {"bidirectional" if self.bidirectional_LSTM else ""} LSTM with {2 ** power_k_hidden_units} '
+                f'a {"bidirectional" if self.bidirectional_LSTM else ""} LSTM with {lstm_units} '
                 f'units and a dense layer with output dimension {self.summary_dim} as summary network')
         else:
             raise ValueError(f'Unknown summary network type {self.summary_network_type}')
@@ -216,10 +220,6 @@ class NlmeBaseAmortizer(ABC):
             self.prior_cov = np.diag(self.prior_std ** 2)
         else:
             raise ValueError('Unknown prior type')
-
-        self.configured_input = partial(configure_input,
-                                        prior_means=self.prior_mean,
-                                        prior_stds=self.prior_std)
         return
 
     def _reconfigure_samples(self, samples: np.ndarray) -> np.ndarray:
@@ -344,7 +344,7 @@ def configure_input(forward_dict: dict,
     out_dict = {}
 
     # Convert data to float32
-    data = forward_dict['sim_data'].astype(np.float32)
+    data = forward_dict['sim_data']
 
     # simulate batch
     if data.ndim != 3:  # so not (batch_size, n_obs, n_measurements)
@@ -357,7 +357,7 @@ def configure_input(forward_dict: dict,
             raise ValueError(f'Invalid data dimension {data.ndim}')
 
     # Extract prior draws
-    params = forward_dict['prior_draws'].astype(np.float32)
+    params = forward_dict['prior_draws']
 
     # z-standardize with previously computed means
     if prior_means is not None and prior_stds is not None:
@@ -375,7 +375,6 @@ def configure_input(forward_dict: dict,
                 plt.show()
 
     # Add to keys
-    out_dict['summary_conditions'] = data[idx_keep]
-    out_dict['parameters'] = params[idx_keep]
-
+    out_dict['summary_conditions'] = data[idx_keep].astype(np.float32)
+    out_dict['parameters'] = params[idx_keep].astype(np.float32)
     return out_dict

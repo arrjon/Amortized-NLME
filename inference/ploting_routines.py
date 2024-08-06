@@ -311,16 +311,19 @@ def plot_estimated_distributions(result_list: list[np.ndarray],
 def plot_normal_distributions(beta: np.ndarray,
                               psi: np.ndarray,
                               title: Optional[str] = None,
+                              label: Optional[str] = None,
                               param_names_plot: Optional[list[str]] = None,
                               posterior_samples: Optional[np.ndarray] = None,
                               lb: Optional[np.ndarray] = None,
                               ub: Optional[np.ndarray] = None,
                               max_col: int = 5,
-                              fig_name: Optional[str] = None) -> None:
+                              ax: Optional[plt.Axes] = None,
+                              color: str = 'blue') -> plt.Axes:
     # plot distributions
     n_cols = min(max_col, beta.size)
     n_rows = int(np.ceil(beta.size / n_cols))
-    fig, ax = plt.subplots(n_rows, n_cols, tight_layout=True, figsize=(15, 5))
+    if ax is None:
+        _, ax = plt.subplots(n_rows, n_cols, tight_layout=True, figsize=(15, 5))
     axis = ax.flatten()
 
     # set x limits
@@ -338,7 +341,7 @@ def plot_normal_distributions(beta: np.ndarray,
         x = np.linspace(beta[p_id] - 2.58 * np.sqrt(psi.diagonal()[p_id]),
                         beta[p_id] + 2.58 * np.sqrt(psi.diagonal()[p_id]), 100)
         axis[p_id].plot(x, norm.pdf(x, loc=beta[p_id], scale=np.sqrt(psi.diagonal()[p_id])),
-                        color='blue')
+                        color=color, label=label)
 
         if posterior_samples is not None:
             axis[p_id].hist(posterior_samples[:, :, p_id].flatten(), bins=20, density=True,
@@ -351,10 +354,9 @@ def plot_normal_distributions(beta: np.ndarray,
     if title is not None:
         axis[n_cols // 2].set_title(title)
 
-    for _ax in axis[beta.size:]:
-        _ax.remove()
-    plt.show()
-    return
+    #for _ax in axis[beta.size:]:
+    #    _ax.remove()
+    return ax
 
 
 def plot_histograms(param_samples: np.ndarray,
