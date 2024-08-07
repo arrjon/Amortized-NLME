@@ -128,7 +128,7 @@ def batch_simulator(param_batch: np.ndarray,
             params[0] = 0.0
 
         # convert to julia types
-        jl_parameter = jlconvert(jl.Vector[jl.Float64], params[:-2])
+        jl_parameter = jlconvert(jl.Vector[jl.Float64], params[:-1])
         jl_dosetimes = jlconvert(jl.Vector[jl.Float64], t_doses)
         jl_t_measurement = jlconvert(jl.Vector[jl.Float64], t_measurements)
 
@@ -142,7 +142,7 @@ def batch_simulator(param_batch: np.ndarray,
 
         # apply noise
         if with_noise:
-            y_sim = prop_noise(y_sim, error_constant=params[2], error_prop=params[-1])
+            y_sim = prop_noise(y_sim, error_constant=0, error_prop=params[-1])
 
         # applying censoring
         y_sim = measurement_model(y_sim)
@@ -267,11 +267,11 @@ class dePillisModel(NlmeBaseAmortizer):
                  ):
         # define names of parameters
         param_names = ['Ab0', 'r1', 'r2', 'r3', 'r4', 'k1', 'k2',
-                       'error_constant', 'error_prop']
+                       'error_prop']
 
         # define prior values (for log-parameters)
-        prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1, 0.1])
-        prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 1., 1]))
+        prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1])
+        prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 1]))
 
         # define prior bounds for uniform prior
         # self.prior_bounds = np.array([[-10, 5], [-5, 10], [-5, 10], [-20, 0], [-10, 0], [-10, 0], [-10, 0]])
@@ -306,18 +306,18 @@ class dePillisModel(NlmeBaseAmortizer):
         return
 
     def load_amortizer_configuration(self, model_idx: int = 0, load_best: bool = False) -> str:
-        self.n_epochs = 300
+        self.n_epochs = 500
         self.summary_dim = self.n_params * 2
         self.n_obs_per_measure = 3  # time and measurement + event type (measurement = 0, dosing = 1)
 
         # load best
         if load_best:
-            model_idx = 1
+            model_idx = 3
 
-        # 0: 9.7840
-        # 1: 9.7285
-        # 2: 10.0763
-        # 3: 9.7415
+        # 0: -0.9772
+        # 1: -0.1455
+        # 2: -0.3799
+        # 3: -1.4038
 
         bidirectional_LSTM = [True]
         n_coupling_layers = [6, 7]
@@ -334,7 +334,7 @@ class dePillisModel(NlmeBaseAmortizer):
                          f'-{"Bi-LSTM" if self.bidirectional_LSTM else "LSTM"}' \
                          f'-{self.n_coupling_layers}layers' \
                          f'-{self.n_dense_layers_in_coupling}coupling-{self.coupling_design}' \
-                         f'-{self.n_epochs}epochs_{self.prior_type}' \
+                         f'-{self.n_epochs}epochs' \
                          f'-{datetime.now().strftime("%Y-%m-%d_%H-%M")}'
             return model_name
 
@@ -349,7 +349,7 @@ class dePillisModel(NlmeBaseAmortizer):
                      f'-{"Bi-LSTM" if self.bidirectional_LSTM else "LSTM"}' \
                      f'-{self.n_coupling_layers}layers' \
                      f'-{self.n_dense_layers_in_coupling}coupling-{self.coupling_design}' \
-                     f'-{self.n_epochs}epochs_{self.prior_type}'
+                     f'-{self.n_epochs}epochs'
         return model_name
 
     def load_data(self,
@@ -362,16 +362,16 @@ class dePillisModel(NlmeBaseAmortizer):
         if synthetic:
             assert isinstance(n_data, int)
             np.random.seed(seed)
-            # Ab0, r1, r2, r3, r4, k1, k2, error_constant, error_prop
-            synthetic_mean = np.array([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1, 0.1])
+            # Ab0, r1, r2, r3, r4, k1, k2, error_prop
+            synthetic_mean = np.array([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1])
             synthetic_mean = np.random.normal(synthetic_mean, 1)
             synthetic_mean[synthetic_mean < 0.00001] = 0.00005
             synthetic_mean[[3, 4]] = 0.00001  # otherwise too large
             synthetic_mean[6] = 55.0  # k2 is fixed
-            synthetic_mean[-2:] = 0.05  # otherwise too large
+            synthetic_mean[-1] = 0.05  # otherwise too large
             synthetic_mean = np.log(synthetic_mean)
             synthetic_cov = np.random.uniform(0.001, 1.5, size=9)
-            synthetic_cov[-2:] = 0.001  # error parameters
+            synthetic_cov[-1] = 0.001  # error parameter
             synthetic_cov = np.diag(synthetic_cov)  # no fixed parameters
             params = batch_gaussian_prior_de_pillis(mean=synthetic_mean,
                                                     cov=synthetic_cov,
