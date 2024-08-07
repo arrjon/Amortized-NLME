@@ -370,7 +370,7 @@ class dePillisModel(NlmeBaseAmortizer):
             synthetic_mean[6] = 55.0  # k2 is fixed
             synthetic_mean[-1] = 0.05  # otherwise too large
             synthetic_mean = np.log(synthetic_mean)
-            synthetic_cov = np.random.uniform(0.001, 1.5, size=9)
+            synthetic_cov = np.random.uniform(0.001, 1.5, size=self.n_params)
             synthetic_cov[-1] = 0.001  # error parameter
             synthetic_cov = np.diag(synthetic_cov)  # no fixed parameters
             params = batch_gaussian_prior_de_pillis(mean=synthetic_mean,

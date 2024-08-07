@@ -563,4 +563,7 @@ def huber_normalizing_factor(delta: float, dim: int) -> float:
     ad = a(dim - 1, delta)
     bd = b(dim - 1, delta)
     sphere_d_minus_1 = sphere_volume(dim - 1)
-    return abs(sphere_d_minus_1) * (ad + np.exp(delta ** 2 / 2) * bd)
+    factor = abs(sphere_d_minus_1) * (ad + np.exp(delta ** 2 / 2) * bd)
+    if factor < 0:  # can happen due to numerical issues when delta is very large
+        factor = 1
+    return factor

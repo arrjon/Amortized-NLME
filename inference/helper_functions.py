@@ -11,6 +11,9 @@ from inference.base_nlme_model import NlmeBaseAmortizer
 from inference.ploting_routines import corrplot
 
 
+MINIMAL_STD_FIXED = 0.01
+
+
 def create_boundaries_from_prior(
         prior_mean: np.ndarray,
         prior_std: np.ndarray,
@@ -18,8 +21,7 @@ def create_boundaries_from_prior(
         prior_bounds: Optional[np.ndarray] = None,
         covariates_bounds: Optional[np.ndarray] = None,
         boundary_width_from_prior: float = 3,
-        covariance_format: str = 'diag',
-        minimal_std_fixed_params: float = 0.01) -> np.ndarray:
+        covariance_format: str = 'diag') -> np.ndarray:
     """Create boundaries for optimization problem from prior mean and standard deviation."""
     if prior_type == 'uniform':
         assert prior_bounds is not None, 'prior_bounds must be given for uniform prior'
@@ -38,7 +40,7 @@ def create_boundaries_from_prior(
 
     # make sure that standard deviation is not too small for fixed parameters
     # otherwise the optimization problem becomes ill-conditioned
-    minimal_std_inv = -np.log(minimal_std_fixed_params)
+    minimal_std_inv = -np.log(MINIMAL_STD_FIXED)
     ub_std = min(ub_std, minimal_std_inv)
 
     # concatenate mean and standard deviation boundaries
@@ -160,7 +162,7 @@ def create_fixed_params(fix_names: list, fixed_values: list,
             # standard deviation parameters are log-inverse-transformed
             if fixed_values[n_i] == 0:
                 # if standard deviation is zero, set to lower bound (or upper bound of log-inverse-transformed)
-                temp_val = -np.log(0.001)
+                temp_val = -np.log(MINIMAL_STD_FIXED)
             else:
                 temp_val = np.log(1 / fixed_values[n_i])
         else:
