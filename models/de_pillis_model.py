@@ -306,18 +306,25 @@ class dePillisModel(NlmeBaseAmortizer):
         return
 
     def load_amortizer_configuration(self, model_idx: int = 0, load_best: bool = False) -> str:
-        self.n_epochs = 500
+        self.n_epochs = 750
         self.summary_dim = self.n_params * 2
         self.n_obs_per_measure = 3  # time and measurement + event type (measurement = 0, dosing = 1)
 
         # load best
         if load_best:
-            model_idx = 3
+            model_idx = 0
 
-        # 0: -0.9772
-        # 1: -0.1455
-        # 2: -0.3799
-        # 3: -1.4038
+        # 750
+        # 0: -2.1249 (746 epochs)
+        # 1: -1.9177 (749 epochs)
+        # 2: -1.7052 (749 epochs)
+        # 3: -1.7814 (742 epochs)
+
+        # 500
+        # 0: -1.4427 (495 epochs)
+        # 1: -1.1849 (494 epochs)
+        # 2: -1.2068 (498 epochs)
+        # 3: 1.9243 (275 epochs) failed
 
         bidirectional_LSTM = [True]
         n_coupling_layers = [6, 7]
@@ -365,6 +372,7 @@ class dePillisModel(NlmeBaseAmortizer):
             # Ab0, r1, r2, r3, r4, k1, k2, error_prop
             synthetic_mean = np.array([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1])
             synthetic_mean = np.random.normal(synthetic_mean, 1)
+            synthetic_mean[0] = 12
             synthetic_mean[synthetic_mean < 0.00001] = 0.00005
             synthetic_mean[[3, 4]] = 0.00001  # otherwise too large
             synthetic_mean[6] = 55.0  # k2 is fixed

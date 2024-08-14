@@ -174,7 +174,7 @@ cython_debug/
 !/networks/amortizer-sde-fro-sequence-summary-LSTM-7layers-3coupling-spline-500epochs*
 !/networks/amortizer-simple-fro-sequence-summary-Bi-LSTM-6layers-2coupling-spline-500epochs*
 !/networks/amortizer-pharma-split-sequence-summary-Bi-LSTM-8layers-2coupling-spline-500epochs*
-!/networks/amortizer-dePillis-normal-sequence-summary-Bi-LSTM-7layers-3coupling-spline-300epochs
+!/networks/amortizer-dePillis-normal-sequence-summary-Bi-LSTM-7layers-3coupling-spline-750epochs
 !/networks/measure_presimulation_time.py
 !/networks/log presimulation/fröhlich*
 !/networks/log training/fröhlich*

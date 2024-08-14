@@ -88,6 +88,7 @@ class NlmeBaseAmortizer(ABC):
         # amortizer and prior
         # must be before calling the generative model so prior etc. are up-to-date
         self.network_name = self.load_amortizer_configuration(model_idx=network_idx, load_best=load_best)
+        self.amortizer = None
         self._build_amortizer()
         self._build_prior()
         self.configured_input = partial(configure_input,
@@ -127,6 +128,19 @@ class NlmeBaseAmortizer(ABC):
                           default_lr=0.0005 if self.summary_network_type != 'transformer' else 1e-5,
                           checkpoint_path=path_store_network,
                           max_to_keep=max_to_keep)
+
+        trainer.load_pretrained_network()
+        history = trainer.loss_history.get_plottable()
+
+        if 'val_losses' in history:
+            # Find the checkpoint with the lowest validation loss out of the last 7
+            max_to_keep = min(max_to_keep, len(history['val_losses']))
+            recent_losses = history['val_losses'].iloc[-max_to_keep:]
+            best_valid_epoch = recent_losses['Loss'].idxmin() + 1  # checkpoints are 1-based indexed
+            new_checkpoint = trainer.manager.latest_checkpoint.rsplit('-', 1)[0] + f'-{best_valid_epoch}'
+            trainer.checkpoint.restore(new_checkpoint)
+            print("Networks loaded from {}".format(new_checkpoint))
+            print("Validation loss: {:.4f}".format(recent_losses['Loss'].min()))
 
         print(self.amortizer.summary())
         return trainer
