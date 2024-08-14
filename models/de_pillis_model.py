@@ -372,7 +372,6 @@ class dePillisModel(NlmeBaseAmortizer):
             # Ab0, r1, r2, r3, r4, k1, k2, error_prop
             synthetic_mean = np.array([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1])
             synthetic_mean = np.random.normal(synthetic_mean, 1)
-            synthetic_mean[0] = 12
             synthetic_mean[synthetic_mean < 0.00001] = 0.00005
             synthetic_mean[[3, 4]] = 0.00001  # otherwise too large
             synthetic_mean[6] = 55.0  # k2 is fixed
@@ -392,10 +391,17 @@ class dePillisModel(NlmeBaseAmortizer):
                     # previous infected
                     covariates[i, 0] = 1
 
+            # calculate the true mean and std with respect to the covariates
+            true_mean = np.mean(params, axis=0)
+            true_mean[0] = np.mean(params[covariates[:, 0] == 1, 0])
+            true_std = np.std(params, axis=0)
+            true_std[0] = np.std(params[covariates[:, 0] == 1, 0])
+            true_params = np.concatenate((true_mean, true_std))
+
             if return_synthetic_params and not load_covariates:
-                return patients_data, params
+                return patients_data, true_params
             elif return_synthetic_params and load_covariates:
-                return patients_data, covariates, params
+                return patients_data, covariates, true_params
             elif load_covariates:
                 return patients_data, covariates
             return patients_data
