@@ -477,14 +477,14 @@ class ObjectiveFunctionNLME:
 
         """
         if self.covariance_format == 'diag':
-            psi_inv_vector = -0.5*np.log(psi.diagonal())
+            psi_inv_vector = -0.5 * np.log(psi.diagonal())
         else:
             # 'cholesky'
             # triangular matrix to vector
             psi_inv = np.linalg.inv(psi)
             lu, d, perm = ldl_decomposition(psi_inv)
             psi_inv_lower = lu[perm, :][np.tril_indices(self.param_dim, k=-1)]
-            psi_inv_vector = np.concatenate((0.5*np.log(d.diagonal()), psi_inv_lower))
+            psi_inv_vector = np.concatenate((0.5 * np.log(d.diagonal()), psi_inv_lower))
         return psi_inv_vector
 
 
@@ -502,7 +502,7 @@ def get_inverse_covariance(psi_inverse_vector: np.ndarray,
 
     """
     if covariance_format == 'diag':
-        psi_inverse = np.diag(np.exp(2*psi_inverse_vector))
+        psi_inverse = np.diag(np.exp(2 * psi_inverse_vector))
     else:
         # matrix is 'cholesky'
         # vector to triangular matrix
@@ -510,7 +510,7 @@ def get_inverse_covariance(psi_inverse_vector: np.ndarray,
         psi_inverse_lower[np.diag_indices(param_dim)] = 1
         psi_inverse_lower[np.tril_indices(param_dim, k=-1)] = psi_inverse_vector[param_dim:]
 
-        psi_inverse_diag = np.diag(np.exp(2*psi_inverse_vector[:param_dim]))
+        psi_inverse_diag = np.diag(np.exp(2 * psi_inverse_vector[:param_dim]))
         psi_inverse = psi_inverse_lower.dot(psi_inverse_diag).dot(psi_inverse_lower.T)
     return psi_inverse
 

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 from bayesflow.amortizers import AmortizedPosterior
 from bayesflow.networks import InvertibleNetwork
@@ -84,6 +85,7 @@ class NlmeBaseAmortizer(ABC):
         self.summary_dim = 10  # default
         self.num_conv_layers = 2  # default
         self.summary_network_type = ['sequence', 'split-sequence', 'transformer'][0]
+        self.latent_dist = 'normal'  # default
 
         # amortizer and prior
         # must be before calling the generative model so prior etc. are up-to-date
@@ -206,7 +208,18 @@ class NlmeBaseAmortizer(ABC):
                                           coupling_settings=coupling_settings)
         print(f'using a {self.n_coupling_layers}-layer cINN as inference network '
               f'with {self.n_dense_layers_in_coupling} layers of design {self.coupling_design}')
-        self.amortizer = AmortizedPosterior(inference_net, summary_net)
+        if self.latent_dist == 'normal':
+            latent_dist = None
+        elif self.latent_dist == 't-student':
+            latent_dist = tfp.distributions.MultivariateStudentTLinearOperator(
+                df=10,  # reasonable choice if one is unsure about the tail behavior
+                loc=np.zeros(inference_net.latent_dim, dtype=np.float32),
+                scale=tf.linalg.LinearOperatorDiag(np.ones(inference_net.latent_dim, dtype=np.float32)),
+            )
+        else:
+            raise ValueError(f'Unknown latent distribution {self.latent_dist}')
+
+        self.amortizer = AmortizedPosterior(inference_net, summary_net, latent_dist=latent_dist)
         return
 
     def _build_prior(self) -> None:
