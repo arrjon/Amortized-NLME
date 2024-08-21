@@ -137,7 +137,7 @@ class NlmeBaseAmortizer(ABC):
         if 'val_losses' in history:
             # Find the checkpoint with the lowest validation loss out of the last 7
             max_to_keep = min(max_to_keep, len(history['val_losses']))
-            recent_losses = history['val_losses'].iloc[-max_to_keep:]
+            recent_losses = history['val_losses'].iloc[-(max_to_keep-1):]
             best_valid_epoch = recent_losses['Loss'].idxmin() + 1  # checkpoints are 1-based indexed
             new_checkpoint = trainer.manager.latest_checkpoint.rsplit('-', 1)[0] + f'-{best_valid_epoch}'
             trainer.checkpoint.restore(new_checkpoint)

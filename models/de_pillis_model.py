@@ -306,19 +306,52 @@ class dePillisModel(NlmeBaseAmortizer):
         return
 
     def load_amortizer_configuration(self, model_idx: int = 0, load_best: bool = False) -> str:
-        self.n_epochs = 750
+        self.n_epochs = 1000
         self.summary_dim = self.n_params * 2
         self.n_obs_per_measure = 3  # time and measurement + event type (measurement = 0, dosing = 1)
 
         # load best
         if load_best:
-            model_idx = 0
+            model_idx = 2
 
-        # 750
-        # 0: -2.1249 (746 epochs)
-        # 1: -1.9177 (749 epochs)
-        # 2: -1.7052 (749 epochs)
-        # 3: -1.7814 (742 epochs)
+        # 1000  (bidriectional LSTM on/off, added 8 coupling layers)
+        # todo: not yet finished
+        # 0: -1.6469 (996 epochs, normal, early stopped)
+        # 1: 0.5922 (734 epochs, normal, early stopped)
+        # 2: -2.5560 (988 epochs, normal, early stopped)
+        # 3: -1.8822 (998 epochs, normal)
+        # 4:
+        # 5:
+        # 6:
+        # 7:
+        # 8:
+        # 9:
+        # 10:
+        # 11:
+
+        bidirectional_LSTM = [False, True]
+        n_coupling_layers = [6, 7, 8]
+        n_dense_layers_in_coupling = [2, 3]
+        coupling_design = ['spline']
+        summary_network_type = ['sequence']
+        latent_dist = ['normal']
+
+        # 750  (added t-student distribution)
+        # 0: -2.1249 (746 epochs, normal)
+        # 1: -1.5960 (745 epochs, t-student)
+        # 2: -1.9177 (749 epochs, normal)
+        # 3: -1.4752 (744 epochs, t-student)
+        # 4: -1.7052 (749 epochs, normal)
+        # 5: -1.6547 (742 epochs, t-student)
+        # 6: -1.7814 (742 epochs, normal)
+        # 7: -0.9790 (746 epochs, t-student)
+
+        # bidirectional_LSTM = [True]
+        # n_coupling_layers = [6, 7]
+        # n_dense_layers_in_coupling = [2, 3]
+        # coupling_design = ['spline']
+        # summary_network_type = ['sequence']
+        # latent_dist = ['normal', 't-student']
 
         # 500
         # 0: -1.4427 (495 epochs)
@@ -326,12 +359,12 @@ class dePillisModel(NlmeBaseAmortizer):
         # 2: -1.2068 (498 epochs)
         # 3: 1.9243 (275 epochs) failed
 
-        bidirectional_LSTM = [True]
-        n_coupling_layers = [6, 7]
-        n_dense_layers_in_coupling = [2, 3]
-        coupling_design = ['spline']
-        summary_network_type = ['sequence']
-        latent_dist = ['normal', 't-student']
+        # bidirectional_LSTM = [True]
+        # n_coupling_layers = [6, 7]
+        # n_dense_layers_in_coupling = [2, 3]
+        # coupling_design = ['spline']
+        # summary_network_type = ['sequence']
+        # latent_dist = ['normal']
 
         combinations = list(itertools.product(bidirectional_LSTM, n_coupling_layers,
                                               n_dense_layers_in_coupling, coupling_design, summary_network_type,
@@ -392,13 +425,20 @@ class dePillisModel(NlmeBaseAmortizer):
                                                     cov=synthetic_cov,
                                                     batch_size=n_data)
 
+            # calculate the true mean and std with respect to the covariates in Ab0
+            true_mean = np.mean(params, axis=0)
+            true_mean[0] = np.mean(params[params[:, 0] == np.log(0.01), 0])
+            true_std = np.std(params, axis=0)
+            true_std[0] = np.std(params[params[:, 0] == np.log(0.01), 0])
+            true_params = np.concatenate((true_mean, true_std))
+
             # add covariates
             covariates = np.zeros((n_data, 3))
             # sample age from real ones
             df_measurements = pd.read_csv(path_to_data + "bf_data_measurements.csv", index_col=0)
             df_measurements['gender_code'] = df_measurements['gender'].astype('category').cat.codes
             # gender: 0 is first appearing gender in df, here female
-            df_measurements['age_standardized'] = df_measurements['age'] / 100.
+            df_measurements['age_standardized'] = np.log(df_measurements['age'])
             covariates[:, 1] = np.random.choice(df_measurements['age_standardized'].values, n_data)
             covariates[:, 2] = np.random.choice(df_measurements['gender_code'].values, n_data)
 
@@ -406,8 +446,9 @@ class dePillisModel(NlmeBaseAmortizer):
             no_prev_infect = params[:, 0] == np.log(0.01)
             covariates[no_prev_infect, 0] = 0
             covariates[~no_prev_infect, 0] = 1
-            params[no_prev_infect] += c_params[0] * covariates[no_prev_infect, 1][:, np.newaxis]
-            params[no_prev_infect] += c_params[1] * covariates[no_prev_infect, 2][:, np.newaxis]
+            params += c_params[0] * covariates[:, 1][:, np.newaxis]
+            params += c_params[1] * covariates[:, 2][:, np.newaxis]
+            params[no_prev_infect, 0] = np.log(0.01)
 
             patients_data = batch_simulator(param_batch=params)
             for i, o in enumerate(patients_data):
@@ -415,13 +456,6 @@ class dePillisModel(NlmeBaseAmortizer):
                     # previous infected
                     if covariates[i, 0] != 1:
                         raise ValueError('Previous infected but not in covariates')
-
-            # calculate the true mean and std with respect to the covariates
-            true_mean = np.mean(params, axis=0)
-            true_mean[0] = np.mean(params[covariates[:, 0] == 1, 0])
-            true_std = np.std(params, axis=0)
-            true_std[0] = np.std(params[covariates[:, 0] == 1, 0])
-            true_params = np.concatenate((true_mean, true_std))
 
             if return_synthetic_params and not load_covariates:
                 return patients_data, true_params
@@ -437,7 +471,7 @@ class dePillisModel(NlmeBaseAmortizer):
         df_measurements = pd.read_csv(path_to_data + "bf_data_measurements.csv", index_col=0)
         df_measurements['gender_code'] = df_measurements['gender'].astype('category').cat.codes
         # gender: 0 is first appearing gender in df, here female
-        df_measurements['age_standardized'] = df_measurements['age'] / 100.
+        df_measurements['age_standardized'] = np.log(df_measurements['age'])
 
         patients_data = []
         patients_covariates = []
@@ -448,11 +482,9 @@ class dePillisModel(NlmeBaseAmortizer):
             d_times = df_dosages.loc[patient, ['day_1dose', 'day_2dose', 'day_3dose']].values
             d_times[np.isnan(d_times)] = 600.
             covariates = df_measurements.loc[patient, ['infection_bef_1st_dose', 'age_standardized', 'gender_code']].values[0].flatten()
-            #covariates = df_measurements.loc[patient, ['infection_bef_1st_dose']].values[0].flatten()
 
-            # log-transform data
+            # apply measurement model
             y = measurement_model(y)
-
             data = convert_to_bf_format(y=y,
                                         t_measurements=m_times,
                                         infected_before_first_dose=infection_bef_1st_dose,
