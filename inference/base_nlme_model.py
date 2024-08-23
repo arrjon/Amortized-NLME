@@ -154,7 +154,7 @@ class NlmeBaseAmortizer(ABC):
         Returns: bayesflow.amortizers.AmortizedPosterior -- the amortizer
         """
         # summary network
-        # 2^k hidden units s.t. 2^k > #datapoints = 8
+        # 2^k hidden units s.t. 2^k > #datapoints
         lstm_units = 2 ** int(np.ceil(np.log2(self.max_n_obs)))
         lstm_units = max(lstm_units, 32)
 

@@ -316,18 +316,18 @@ class dePillisModel(NlmeBaseAmortizer):
 
         # 1000  (bidriectional LSTM on/off, added 8 coupling layers)
         # todo: not yet finished
-        # 0: -1.6469 (996 epochs, normal, early stopped)
-        # 1: 0.5922 (734 epochs, normal, early stopped)
-        # 2: -2.5560 (988 epochs, normal, early stopped)
-        # 3: -1.8822 (998 epochs, normal)
-        # 4:
-        # 5:
-        # 6:
-        # 7:
-        # 8:
-        # 9:
-        # 10:
-        # 11:
+        # 0: -1.6469 (996 epochs, normal, early stopped) # lstm, 6 layers, 2
+        # 1: 0.5922 (734 epochs, normal, early stopped) # lstm, 6 layers, 3
+        # 2: -2.5560 (988 epochs, normal, early stopped)  #lstm, 7 layers,2
+        # 3: -1.8822 (998 epochs, normal) # lstm, 7 layers, 3
+        # 4: -2.4473 (997 epochs, normal)  #lstm, 8 layers,2
+        # 5:  3.1764 (203 epochs, normal, failed)  # lstm, 8 layers, 3
+        # 6: -2.4837 (959 epochs, normal)  # bi-lstm, 6 layers, 2
+        # 7: -0.9242 (996 epochs, normal)  # bi-lstm, 6 layers, 3
+        # 8: -2.0800 (991 epochs, normal, early stopped)  # bi-lstm, 7 layers, 2
+        # 9: -2.4642 (993 epochs, normal, early stopped)  # bi-lstm, 7 layers, 3
+        # 10: -1.4012 (925 epochs, normal early stopped)  # bi-lstm, 8 layers, 2
+        # 11: -2.2700 (994 epochs, normal)  # bi-lstm, 8 layers, 3
 
         bidirectional_LSTM = [False, True]
         n_coupling_layers = [6, 7, 8]
