@@ -193,7 +193,6 @@ def simulate_single_patient(param_batch: np.ndarray,
                             patient_data: np.ndarray,
                             full_trajectory: bool = False,
                             with_noise: bool = False,
-                            convert_to_bf_batch: bool = False
                             ) -> np.ndarray:
     """uses the batch simulator to simulate a single patient"""
     y, t_measurements, doses_time_points, _ = convert_bf_to_observables(patient_data)
@@ -204,7 +203,7 @@ def simulate_single_patient(param_batch: np.ndarray,
                             t_measurements=t_measurements,
                             t_doses=doses_time_points,
                             with_noise=with_noise,
-                            convert_to_bf_batch=convert_to_bf_batch)
+                            convert_to_bf_batch=False)
     return y_sim
 
 
@@ -314,8 +313,22 @@ class dePillisModel(NlmeBaseAmortizer):
         if load_best:
             model_idx = 2
 
-        # 1000  (bidriectional LSTM on/off, added 8 coupling layers)
-        # todo: not yet finished
+        # transformer
+        #bidirectional_LSTM = [False]
+        #n_coupling_layers = [7]
+        #n_dense_layers_in_coupling = [2, 3]
+        #coupling_design = ['spline']
+        #summary_network_type = ['transformer']
+        #latent_dist = ['normal', 't-student']
+
+
+        # transformer
+        # 0: 1.6037
+        # 1: -0.8997
+        # 2: -0.5014
+        # 3: -0.9977
+
+        # 1000  (bidirectional LSTM on/off, added 8 coupling layers)
         # 0: -1.6469 (996 epochs, normal, early stopped) # lstm, 6 layers, 2
         # 1: 0.5922 (734 epochs, normal, early stopped) # lstm, 6 layers, 3
         # 2: -2.5560 (988 epochs, normal, early stopped)  #lstm, 7 layers,2

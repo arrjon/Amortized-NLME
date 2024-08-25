@@ -338,38 +338,20 @@ print('BIC', BIC)
 # Since our amortized inference is very efficient, we can use it to sample from the posterior distribution of the population parameters.
 #%%
 # build neg log prior
+from pypesto.objective.priors import get_parameter_prior_dict
 prior = NegLogParameterPriors(  # no prior is uniform prior on parameter scale defined by bounds
-    [
-        # population mean gets same prior as individual model
-        {'index': pesto_problem.full_index_to_free_index(i),
-         'density_fun': lambda x: -stats.norm.logpdf(x, loc=individual_model.prior_mean[i],
-                                                     scale=np.sqrt(individual_model.prior_cov.diagonal()[i]))}
-        for i in range(individual_model.n_params) if i not in fixed_indices
-    ]
-    # + [ # std get a half-t prior (non-informative prior)
-    #    {'index': pesto_problem.full_index_to_free_index(i),
-    #     'density_fun': lambda x: -stats.t.pdf(np.exp(-x), 3, loc=0, scale=1) * 2}
-    #    for i in range(individual_model.n_params, individual_model.n_params*2) if i not in fixed_indices
-    # ]
-    + [  # variance gets a gamma prior (for smaller variances)
-        {'index': pesto_problem.full_index_to_free_index(i),
-         'density_fun': lambda x: -stats.gamma.pdf(np.exp(-2*x), a=2, scale=1)}
-        for i in range(individual_model.n_params, individual_model.n_params * 2) if i not in fixed_indices
-    ]
-    + [  # all other parameters get a uniform prior
-        {'index': pesto_problem.full_index_to_free_index(i),
-         'density_fun': lambda x: np.log(pesto_problem.ub_full[i] - pesto_problem.lb_full[i])}
-        for i in range(individual_model.n_params * 2, len(pypesto_result.problem.x_names)) if i not in fixed_indices
-    ]
-
-    # + [ # negative log of population std gets a normal prior
-    #  {'index': pesto_problem.full_index_to_free_index(i+individual_model.n_params), 'density_fun': lambda x: -stats.norm.logpdf(x, loc=inv_std_prior_mean[i], scale=inv_std_prior_std[i])}
-    # for i in range(individual_model.n_params) if i+individual_model.n_params not in fixed_indices
-    # ] + [  # all other parameters get a standard normal prior
-    #    {'index': pesto_problem.full_index_to_free_index(i+individual_model.n_params*2), 'density_fun': lambda x: -stats.norm#.logpdf(x, loc=0, scale=1)}
-    # for i in range(len(mixed_effect_params_names)-individual_model.n_params*2) if i+individual_model.n_params*2 not in fixed_indices
-    # ]
+    [get_parameter_prior_dict(index=i,
+                         prior_type="parameterScaleNormal",
+                         prior_parameters=[individual_model.prior_mean[i], individual_model.prior_std[i]],
+                         parameter_scale="log")
+     for i in range(individual_model.n_params) if i not in fixed_indices]
+    + [get_parameter_prior_dict(index=i,
+                         prior_type="parameterScaleUniform",
+                         prior_parameters=[pesto_problem.lb_full[i], pesto_problem.ub_full[i]],
+                         parameter_scale="log")
+     for i in range(len(pypesto_result.problem.x_names)) if i not in fixed_indices]
 )
+
 #%%
 bayesian_problem = Problem(
     objective=AggregatedObjective([Objective(obj_fun_amortized), prior]),
