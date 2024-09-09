@@ -178,7 +178,6 @@ class NlmeBaseAmortizer(ABC):
             summary_net = TimeSeriesTransformer(
                 input_dim=self.n_obs_per_measure,
                 summary_dim=self.summary_dim,
-                bidirectional=self.bidirectional_LSTM
             )
             print(f'using a TimeSeriesTransformer with a {"bidirectional" if self.bidirectional_LSTM else ""} LSTM '
                   f'template and output dimension {self.summary_dim} as summary network')
@@ -199,7 +198,7 @@ class NlmeBaseAmortizer(ABC):
         # inference network
         coupling_settings = {  # dict overwrites default settings from BayesFlow
             "num_dense": self.n_dense_layers_in_coupling,
-            'dense_args': dict(activation='elu')  # standard is ReLU which might be faster
+            'dense_args': dict(activation='relu')
         }
 
         inference_net = InvertibleNetwork(num_params=self.n_params,
