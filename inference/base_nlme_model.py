@@ -198,7 +198,6 @@ class NlmeBaseAmortizer(ABC):
         # inference network
         coupling_settings = {  # dict overwrites default settings from BayesFlow
             "num_dense": self.n_dense_layers_in_coupling,
-            'dense_args': dict(activation='relu')
         }
 
         inference_net = InvertibleNetwork(num_params=self.n_params,
@@ -218,7 +217,7 @@ class NlmeBaseAmortizer(ABC):
         else:
             raise ValueError(f'Unknown latent distribution {self.latent_dist}')
 
-        self.amortizer = AmortizedPosterior(inference_net, summary_net, latent_dist=latent_dist)
+        self.amortizer = AmortizedPosterior(inference_net, summary_net, latent_dist=latent_dist, summary_loss_fun='MMD')
         return
 
     def _build_prior(self) -> None:
@@ -359,8 +358,7 @@ def batch_uniform_prior(prior_bounds: np.ndarray,
 
 def configure_input(forward_dict: dict,
                     prior_means: Optional[np.ndarray] = None,
-                    prior_stds: Optional[np.ndarray] = None,
-                    show_more: bool = False) -> dict:
+                    prior_stds: Optional[np.ndarray] = None) -> dict:
     """
         Function to configure the simulated quantities (i.e., simulator outputs)
         into a neural network-friendly (BayesFlow) format.
@@ -382,25 +380,25 @@ def configure_input(forward_dict: dict,
         else:
             raise ValueError(f'Invalid data dimension {data.ndim}')
 
+    # Remove a batch if it contains nan, inf or -inf
+    idx_keep = np.all(np.isfinite(data), axis=(1, 2))
+    if not np.all(idx_keep):
+        print(f'Invalid value(s) encountered...removing {idx_keep.size - np.sum(idx_keep)} entry(ies) from batch')
+
+    # Add to keys
+    out_dict['summary_conditions'] = data[idx_keep].astype(np.float32)
+
     # Extract prior draws
-    params = forward_dict['prior_draws']
+    if 'prior_draws' in forward_dict:
+        params = forward_dict['prior_draws']
+    elif 'parameters' in forward_dict:
+        params = forward_dict['parameters']
+    else:
+        return out_dict
 
     # z-standardize with previously computed means
     if prior_means is not None and prior_stds is not None:
         params = (params - prior_means) / prior_stds
 
-    # Remove a batch if it contains nan, inf or -inf
-    idx_keep = np.all(np.isfinite(data), axis=(1, 2))
-    if not np.all(idx_keep):
-        print(f'Invalid value(s) encountered...removing {idx_keep.size - np.sum(idx_keep)} entry(ies) from batch')
-        if show_more:
-            bad_params = np.exp(params[~idx_keep])
-            for p in bad_params.T:
-                plt.figure()
-                plt.hist(p)
-                plt.show()
-
-    # Add to keys
-    out_dict['summary_conditions'] = data[idx_keep].astype(np.float32)
     out_dict['parameters'] = params[idx_keep].astype(np.float32)
     return out_dict

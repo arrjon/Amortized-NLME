@@ -1,4 +1,4 @@
-bayesflow==1.1.4
+bayesflow==1.1.6
 juliacall==0.9.15
 matplotlib>=3.8.2
 numpy==1.24.3

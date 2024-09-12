@@ -530,7 +530,7 @@ class dePillisModel(NlmeBaseAmortizer):
         return
 
     def load_amortizer_configuration(self, model_idx: int = 0, load_best: bool = False) -> str:
-        self.n_epochs = 1000
+        self.n_epochs = 100 # 1000
         self.summary_dim = self.n_params * 2
         if FEATURES == 'old':
             self.n_obs_per_measure = 3  # time and measurement + event type (measurement = 0, dosing = 1)
@@ -555,6 +555,7 @@ class dePillisModel(NlmeBaseAmortizer):
         latent_dist = ['normal', 't-student']
 
         # 5 better than 3, but 3 seems to generalize better
+        # 1000 epochs
         # 0: -0.1846 (999 epochs, Bi_LSTM, 2, normal)
         # 1: 3.5279 (244 epochs, Bi_LSTM, 2, t-student)
         # 2: 2.8107 (218 epochs, transformer, 2, normal)
@@ -564,7 +565,25 @@ class dePillisModel(NlmeBaseAmortizer):
         # 6: -0.0448 (980 epochs, transformer, 3, normal)
         # 7:  0.0714 (947 epochs, transformer, 3, t-student)
 
+        # 500 epochs
+        # 0: 1.5593 (496 epochs, Bi_LSTM, 2, normal)
+        # 1: -0.6357 (496 epochs, Bi_LSTM, 2, t-student)
+        # 2: 1.2162 (367 epochs, transformer, 2, normal)
+        # 3: 0.4292 (498 epochs, transformer, 2, t-student)
+        # 4: 2.0496 (498 epochs, Bi_LSTM, 3, normal)
+        # 5: -0.2481 (494 epochs, Bi_LSTM, 3, t-student)
+        # 6: 2.0370 (490 epochs, transformer, 3, normal)
+        # 7: 0.1666 (485 epochs, transformer, 3, t-student)
 
+        # 100 epochs with MMD
+        # 0: 0.3130 (98 epochs, Bi_LSTM, 2, normal)
+        # 1: 0.7492 (97 epochs, Bi_LSTM, 2, t-student)
+        # 2: 2.1403 (98 epochs, transformer, 2, normal)
+        # 3: 2.2115 (97 epochs, transformer, 2, t-student)
+        # 4: 0.5614 (99 epochs, Bi_LSTM, 3, normal)
+        # 5: 0.7120 (98 epochs, Bi_LSTM, 3, t-student)
+        # 6: 2.0510 (98 epochs, transformer, 3, normal)
+        # 7: 2.5470 (97 epochs, transformer, 3, t-student)
 
 
         # large features
@@ -787,10 +806,10 @@ class dePillisModel(NlmeBaseAmortizer):
         patients_data = []
         patients_covariates = []
         for p_id, patient in enumerate(df_measurements.index.unique()):
-            m_times = df_measurements.loc[patient, ['days_after_first_dose']].values.flatten()
-            y = df_measurements.loc[patient, ['res_serology']].values.flatten()
+            m_times = df_measurements.loc[patient, ['days_after_first_dose']].values.flatten().astype(np.float32)
+            y = df_measurements.loc[patient, ['res_serology']].values.flatten().astype(np.float32)
             infection_bef_1st_dose = df_measurements.loc[patient, ['infection_bef_1st_dose']].values.flatten()[0]
-            d_times = df_dosages.loc[patient, ['day_1dose', 'day_2dose', 'day_3dose']].values
+            d_times = df_dosages.loc[patient, ['day_1dose', 'day_2dose', 'day_3dose']].values.astype(np.float32)
             d_times[np.isnan(d_times)] = NAN_DOSING
             covariates = df_measurements.loc[patient, ['infection_bef_1st_dose', 'age_standardized', 'gender_code']].values[0].flatten()
 
