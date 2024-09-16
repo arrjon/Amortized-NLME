@@ -484,6 +484,7 @@ def convert_bf_large_to_observables(
 class dePillisModel(NlmeBaseAmortizer):
     def __init__(self, name: str = 'dePillisModel', network_idx: int = -1, load_best: bool = False,
                  prior_type: str = 'normal',  # normal or uniform
+                 configurator: Optional[callable] = None
                  ):
         # define names of parameters
         param_names = ['Ab0', 'r1', 'r2', 'r3', 'r4', 'k1', 'k2',
@@ -491,8 +492,10 @@ class dePillisModel(NlmeBaseAmortizer):
 
         # define prior values (for log-parameters)
         if INCLUDE_LIN_ERROR:
-            prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1, 0.1])
-            prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 1., 0.6]))  # todo: changed noise from 1.
+            #prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1, 0.1])
+            #prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 1., 0.6]))
+            prior_mean = np.log([10, 0.01, 0.65, 0.000001, 0.000001, 10.0, 55.0, 1., 0.1])
+            prior_cov = np.diag(np.array([10., 16., 0.5, 16., 3., 0.2, 0.2, 1., 0.6]))
         else:
             prior_mean = np.log([10, 0.01, 0.5, 0.00001, 0.00001, 10.0, 55.0, 0.1])
             prior_cov = np.diag(np.array([5., 5., 5., 5., 5., 3., 3., 0.6]))
@@ -508,7 +511,8 @@ class dePillisModel(NlmeBaseAmortizer):
                          prior_mean=prior_mean,
                          prior_cov=prior_cov,
                          prior_type=prior_type,
-                         max_n_obs=7)  # 4 measurements, 3 doses
+                         max_n_obs=7,  # 4 measurements, 3 doses
+                         configurator=configurator)
 
         # define simulator
         self.simulator = Simulator(batch_simulator_fun=batch_simulator)
@@ -530,8 +534,7 @@ class dePillisModel(NlmeBaseAmortizer):
         return
 
     def load_amortizer_configuration(self, model_idx: int = 0, load_best: bool = False) -> str:
-        self.n_epochs = 100 # 1000
-        self.summary_dim = self.n_params * 2
+        self.n_epochs = 300 # 1000
         if FEATURES == 'old':
             self.n_obs_per_measure = 3  # time and measurement + event type (measurement = 0, dosing = 1)
         elif FEATURES == 'large':
@@ -543,16 +546,35 @@ class dePillisModel(NlmeBaseAmortizer):
 
         # load best
         if load_best:
-            model_idx = 3  # 2
+            model_idx = 10  # 2
 
         # wide features
         bidirectional_LSTM = [True]
-        n_coupling_layers = [7]  # 7 seems to work best
+        n_coupling_layers = [7, 8]  # 7 seems to work best
         n_dense_layers_in_coupling = [2, 3]
         num_conv_layers = [2]
         coupling_design = ['spline']
-        summary_network_type = ['sequence', 'transformer']
+        summary_network_type = [None, 'sequence']   # 'transformer'
         latent_dist = ['normal', 't-student']
+
+        # 0: 2.4815 (None, 7-2, normal)
+        # 1: 2.8136 (None, 7-2, t-student)
+        # 2: 2.7243 (Sequence, 7-2, normal)
+        # 3: 2.5387 (Sequence, 7-2, t-student)
+        # 4: 2.7627 (None, 7-3, normal)
+        # 5: 2.2937 (None, 7-3, t-student)
+        # 6: 2.8578 (Sequence, 7-3, normal)
+        # 7: 2.2395 (Sequence, 7-3, t-student)
+        # 8: 2.9367 (None, 8-2, normal)
+        # 9: 2.6813 (None, 8-2, t-student)
+        # 10: 1.9461 (Sequence, 8-2, normal)
+        # 11: 2.4489 (Sequence, 8-2, t-student)
+        # 12: 2.8626 (None, 8-3, normal)
+        # 13: 2.5157 (None, 8-3, t-student)
+        # 14: 2.4287 (Sequence, 8-3, normal)
+        # 15: 2.6781 (Sequence, 8-3, t-student)
+
+
 
         # 5 better than 3, but 3 seems to generalize better
         # 1000 epochs

@@ -56,7 +56,8 @@ class NlmeBaseAmortizer(ABC):
                  prior_cov: Optional[np.ndarray] = None,
                  prior_type: str = 'normal',
                  max_n_obs: Optional[int] = None,
-                 changeable_obs_n: bool = False):
+                 changeable_obs_n: bool = False,
+                 configurator: Optional[callable] = None):
 
         self.name = name
         # define names of parameters
@@ -79,13 +80,14 @@ class NlmeBaseAmortizer(ABC):
         self.n_epochs = 500
         self.n_coupling_layers = 6
         self.n_dense_layers_in_coupling = 2
-        self.coupling_design = ['affine', 'spline'][0]
+        self.coupling_design = ['affine', 'spline'][1]
         self.batch_size = 128
         self.bidirectional_LSTM = False  # default
-        self.summary_dim = 10  # default
+        self.summary_dim = self.n_params * 2
         self.num_conv_layers = 2  # default
-        self.summary_network_type = ['sequence', 'split-sequence', 'transformer'][0]
-        self.latent_dist = 'normal'  # default
+        self.summary_network_type = [None, 'sequence', 'split-sequence', 'transformer'][1]
+        self.latent_dist = ['normal', 't-student'][0]  # default
+        self.summary_loss_fun = 'MMD'
 
         # amortizer and prior
         # must be before calling the generative model so prior etc. are up-to-date
@@ -93,9 +95,13 @@ class NlmeBaseAmortizer(ABC):
         self.amortizer = None
         self._build_amortizer()
         self._build_prior()
-        self.configured_input = partial(configure_input,
-                                        prior_means=self.prior_mean,
-                                        prior_stds=self.prior_std)
+        if configurator is not None and self.summary_network_type is None:
+            self.configured_input = configurator
+        else:
+            self.configured_input = partial(configure_input,
+                                            summary_network_type=self.summary_network_type,
+                                            prior_means=self.prior_mean,
+                                            prior_stds=self.prior_std)
 
         self.simulator = None  # to be defined in child class
         """
@@ -158,7 +164,11 @@ class NlmeBaseAmortizer(ABC):
         lstm_units = 2 ** int(np.ceil(np.log2(self.max_n_obs)))
         lstm_units = max(lstm_units, 32)
 
-        if self.summary_network_type == 'split-sequence':
+        if self.summary_network_type is None:
+            summary_net = None
+            self.summary_loss_fun = None
+            print('using direct conditions as summary network')
+        elif self.summary_network_type == 'split-sequence':
             network_kwargs = {'summary_dim': self.summary_dim,
                               'num_conv_layers': self.num_conv_layers,
                               'lstm_units': lstm_units,
@@ -172,7 +182,8 @@ class NlmeBaseAmortizer(ABC):
                 num_splits=2,
                 split_data_configurator=split_data if self.n_obs_per_measure < 4 else split_data_2d,
                 network_type=SequenceNetwork,
-                network_kwargs=network_kwargs)
+                network_kwargs=network_kwargs
+            )
 
         elif self.summary_network_type == 'transformer':
             summary_net = TimeSeriesTransformer(
@@ -187,7 +198,8 @@ class NlmeBaseAmortizer(ABC):
                 summary_dim=self.summary_dim,
                 num_conv_layers=self.num_conv_layers,
                 lstm_units=lstm_units,
-                bidirectional=self.bidirectional_LSTM)
+                bidirectional=self.bidirectional_LSTM
+            )
             print(
                 f'using {self.num_conv_layers} layers of MultiConv1D, '
                 f'a {"bidirectional" if self.bidirectional_LSTM else ""} LSTM with {lstm_units} '
@@ -200,10 +212,13 @@ class NlmeBaseAmortizer(ABC):
             "num_dense": self.n_dense_layers_in_coupling,
         }
 
-        inference_net = InvertibleNetwork(num_params=self.n_params,
-                                          num_coupling_layers=self.n_coupling_layers,
-                                          coupling_design=self.coupling_design,
-                                          coupling_settings=coupling_settings)
+        inference_net = InvertibleNetwork(
+            num_params=self.n_params,
+            num_coupling_layers=self.n_coupling_layers,
+            permutation='learnable',
+            coupling_design=self.coupling_design,
+            coupling_settings=coupling_settings
+        )
         print(f'using a {self.n_coupling_layers}-layer cINN as inference network '
               f'with {self.n_dense_layers_in_coupling} layers of design {self.coupling_design}')
         if self.latent_dist == 'normal':
@@ -217,7 +232,9 @@ class NlmeBaseAmortizer(ABC):
         else:
             raise ValueError(f'Unknown latent distribution {self.latent_dist}')
 
-        self.amortizer = AmortizedPosterior(inference_net, summary_net, latent_dist=latent_dist, summary_loss_fun='MMD')
+        self.amortizer = AmortizedPosterior(inference_net, summary_net,
+                                            latent_dist=latent_dist,
+                                            summary_loss_fun=self.summary_loss_fun)
         return
 
     def _build_prior(self) -> None:
@@ -258,31 +275,39 @@ class NlmeBaseAmortizer(ABC):
         """
         return self.prior_mean + samples * self.prior_std
 
-    def draw_posterior_samples(self, data: Union[list, np.ndarray], n_samples: int) -> np.ndarray:
+    def draw_posterior_samples(self, data: Union[list, np.ndarray, dict], n_samples: int) -> np.ndarray:
         """
         Function to draw samples from the posterior distribution.
         Takes care of different data formats and normalization.
 
         Args:
-            data: [list, np.ndarray] - the data
+            data: [list, np.ndarray, dict] - the data
             n_samples: int - number of samples to draw
 
         Returns: samples - np.ndarray - (#data, #samples, #parameters)
 
         """
-        if isinstance(data, np.ndarray):
-            if data.ndim == 2:
-                # just data from one individual
-                data = data[np.newaxis, :]
-            posterior_draws = self.amortizer.sample({'summary_conditions': data}, n_samples=n_samples)
+        if isinstance(data, dict):
+            posterior_draws = self.amortizer.sample(data, n_samples=n_samples)
         else:
-            # data is a list (different lengths, e.g. number of observations)
-            input_list = []
-            for d in data:
-                # make bayesflow dict
-                input_list.append({'summary_conditions': d[np.newaxis, :]})
-            posterior_draws = self.amortizer.sample_loop(input_list, n_samples=n_samples)
-            posterior_draws = posterior_draws.reshape((len(data), n_samples, self.n_params))
+            if self.summary_network_type is None:
+                condition_type = 'direct_conditions'
+            else:
+                condition_type = 'summary_conditions'
+
+            if isinstance(data, np.ndarray):
+                if condition_type == 'summary_conditions' and data.ndim == 2:
+                    # just data from one individual
+                    data = data[np.newaxis, :]
+                posterior_draws = self.amortizer.sample({condition_type: data}, n_samples=n_samples)
+            else:
+                # data is a list (different lengths, e.g. number of observations)
+                input_list = []
+                for d in data:
+                    # make bayesflow dict
+                    input_list.append({condition_type: d[np.newaxis, :]})
+                posterior_draws = self.amortizer.sample_loop(input_list, n_samples=n_samples)
+                posterior_draws = posterior_draws.reshape((len(data), n_samples, self.n_params))
         return self._reconfigure_samples(posterior_draws)
 
     def generate_simulations_from_prior(self,
@@ -295,6 +320,10 @@ class NlmeBaseAmortizer(ABC):
         """
         if self.simulator is None:
             raise ValueError('Simulator not defined yet.')
+        if self.summary_network_type is None:
+            condition_type = 'direct_conditions'
+        else:
+            condition_type = 'summary_conditions'
 
         generative_model = GenerativeModel(prior=self.prior,
                                            simulator=self.simulator,
@@ -302,11 +331,11 @@ class NlmeBaseAmortizer(ABC):
 
         if self.changeable_obs_n:
             # sample separately for each data point since points may have different number of observations
-            new_sims = {'summary_conditions': [], 'parameters': []}
+            new_sims = {condition_type: [], 'parameters': []}
             for i_sample in range(n_samples):
                 single_new_sims = trainer.configurator(generative_model(1))
                 single_new_sims['parameters'] = self._reconfigure_samples(single_new_sims['parameters'])
-                new_sims['summary_conditions'].append(single_new_sims['summary_conditions'].squeeze(axis=0))
+                new_sims[condition_type].append(single_new_sims[condition_type].squeeze(axis=0))
                 new_sims['parameters'].append(single_new_sims['parameters'].squeeze(axis=0))
             new_sims['parameters'] = np.array(new_sims['parameters'])
         else:
@@ -357,6 +386,7 @@ def batch_uniform_prior(prior_bounds: np.ndarray,
 
 
 def configure_input(forward_dict: dict,
+                    summary_network_type: Optional[str],
                     prior_means: Optional[np.ndarray] = None,
                     prior_stds: Optional[np.ndarray] = None) -> dict:
     """
@@ -386,7 +416,10 @@ def configure_input(forward_dict: dict,
         print(f'Invalid value(s) encountered...removing {idx_keep.size - np.sum(idx_keep)} entry(ies) from batch')
 
     # Add to keys
-    out_dict['summary_conditions'] = data[idx_keep].astype(np.float32)
+    if summary_network_type is None:
+        out_dict['direct_conditions'] = data[idx_keep].astype(np.float32)
+    else:
+        out_dict['summary_conditions'] = data[idx_keep].astype(np.float32)
 
     # Extract prior draws
     if 'prior_draws' in forward_dict:
